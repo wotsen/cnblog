@@ -1,0 +1,787 @@
+vnote_backup_file_826537664 /home/wotsen/work/github/projects/ut/cpp/googletest/readme.md
+# 简单说明googletest的用法
+
+**记录一些常用的知识点，更多的参考非常全面的官方文档。本文不介绍`googlemock`**
+
+- `git`路径:[下载](https://github.com/google/googletest)
+
+- 常用例子:`googletest/simple`
+- 全面的例子:`googletest/test`
+- 文档:`googletest/docs`
+  - `samples.md`对于`simple`目录例子的说明
+  - `primer.md`简单介绍
+  - `faq.md`有一些你可能感到疑惑或者想深入了解`googletest`的文档
+  - `advanced.md`非常详细的使用说明文档
+
+## 1 安装
+
+这里介绍使用`cmake`来编译安装。
+
+- 下载好之后:`mkdir mybuild`;
+- `cd mybuild`;
+- `cmake ${下载的googletest路径}`;
+- `make`;
+- `make install`.
+
+**编译的时候加上`-lgtest -lpthread`选项**
+
+## 1.1 简单示例
+
+见`demo`文件夹，运行`buile.sh`。
+由于`googletest`添加测试用例的方式比较特殊，运用`c++`的特性在**全局变量初始化时可以调用函数**，所以添加测试用例的原理为：
+- 使用宏`TEST`添加测试用例;
+- 该宏将定义一个测试用例类，并将该类的一个实例通过`ADD`类接口添加到全局单元测试列表里边；
+- 定义该类的单元测试函数入口(都是统一的函数名)。
+
+那么由于这种特性存在，添加单元测试时只是将测试用例添加到全局测试用例列表，所以可以将不同的测试用例放在不同的文件，并且不需要额外的操作，一起编译即可，十分的模块化，互不依赖。
+
+`demo.cpp`:
+```c
+#include <gtest/gtest.h>
+#include <iostream>
+
+using namespace std;
+
+TEST(TestAssert, running) {
+  // PASS
+}
+
+int main(int argc, char ** argv)
+{
+  testing::InitGoogleTest(&argc, argv);
+
+  return RUN_ALL_TESTS();
+}
+```
+
+`case1.cpp`:
+```c
+#include <gtest/gtest.h>
+
+TEST(TestAssert, case1) {
+  // PASS
+}
+```
+
+`build.sh`:
+```shell
+g++ demo.cpp case1.cpp -o demo -lgtest -lpthread
+./demo
+rm demo
+```
+
+## 2 框架使用
+
+> - `test_assert.cpp`常用断言
+> - `test_setup_tears.cpp`测试用例前后执行的事件
+> - `test_with_param.cpp`关于测试数据参数化
+
+涉及的`test case`与`test suite`:
+- `test case`就单单只一条测试用例;
+- `test suite`则表示一组测试用例，可以理解为一个大的测试用例内部存在多个细节相关的测试用例，成员测试用例.
+
+| Meaning	                                                                         | googletest Term	 | ISTQB Term |
+| :--------------------------------------------------------------------------------- | ---------------- | ---------- |
+| Exercise a particular program path with specific input values and verify the results	 | TEST()	        | Test Case  |
+| A set of several tests related to one component	                                     | Test Case	      | Test Suite |
+
+### 2.1 简单介绍
+
+### 2.1.1 `TEST`宏
+    
+普通的测试用例都使用该宏来添加。
+    
+```c
+#define TEST(test_suite_name, test_name) GTEST_TEST(test_suite_name, test_name)
+```
+可以看到使用该宏添加测试用例时需要两个参数：
+- `test_suite_name`表示`test suite`名字；
+- `test_name`表示`test case`名字。
+所以同一个`test suite`下的测试用例名称`test_name`不能相同，而不同的`test suite`下的测试用例名则可以相同，和前面提到的解释一致。
+    ```c
+    TEST(TestAssert, example_case) {
+      EXPECT_EQ(9, 9);
+      // ASSERT_EQ(8, 9); // 会退出
+      ASSERT_EQ(9, 9);
+    }
+
+    TEST(TestAssert, add_cout) {
+      array<int, 6> arr = {1, 2, 3, 4, 5, 6};
+
+      for (int i = 0; i < arr.size(); i++) {
+        EXPECT_NE(arr[i], i+1) << ", index = [" << i << "]" << endl; // 后面追加打印，不过只有出错时才会有打印
+      }
+    }
+    ```
+
+### 2.1.2 `TEST_F`宏
+
+当我们想让多个 test 使用同一套数据配置时，就需要用到 Test Fixtures 了。
+
+test fixtures 的用法相对复杂一些，创建 fixture 的具体方法如下：
+
+- 派生一个继承 ::testing::Test 的类，并将该类中的一些内容声明为 protected 类型，以便在子类中进行访问；
+- 根据实际情况，编写默认的构造函数或SetUp()函数，来为每个 test 准备所需内容；
+- 根据实际情况，编写默认的析构函数或TearDown()函数，来释放SetUp()中分配的资源；
+- 根据实际情况，定义 test 共享的子程序。
+- 当使用 fixture 时，我们使用 TEST_F() 宏代替 TEST() 宏，TEST_F() 允许我们在 test fixture 中访问对象和子程序。
+
+**<font color=red>注意</font>**：TEST_F() 的第一个参数（即 test case 的名称）必须是 test fixture 类的名字。
+
+对于 TEST_F() 定义的每个 test，googletest 将会在运行时创建一个新的 test fixture，并立即通过 SetUp() 对其进行初始化，然后运行 test，之后通过调用 TearDown() 进行数据清理，最后删除 test fixture。
+需要注意的是，同一个 test case 中不同的 test 具有不同的 test fixture 对象，并且 googletest 每次创建新的 test fixture 前都会先删除之前的 test fixture。多个 test 不会重用相同的 test fixture，
+某个 test 对 fixture 进行的修改对其他 test 无影响。
+细节及关于`test suite`、整个单元测试使用`set up/tearn down`后续说明[跳转](#toc_6).
+
+```c
+class FooCalcTest:public testing::Test
+{
+class FooCalc{
+  public:
+    void Init(void) {}
+
+    int Calc(int a, int b) {
+      return a + b;
+    }
+
+    void Finalize(void) {}
+};
+protected:
+    virtual void SetUp()
+    {
+      cout << "FooCalcTest SetUp" << endl;
+        m_foo.Init();
+    }
+    virtual void TearDown()
+    {
+      cout << "FooCalcTest TearDown" << endl;
+        m_foo.Finalize();
+    }
+
+    FooCalc m_foo;
+};
+
+TEST_F(FooCalcTest, calc1)
+{
+    EXPECT_EQ(28, m_foo.Calc(12, 16));
+}
+
+TEST_F(FooCalcTest, calc2)
+{
+    EXPECT_EQ(17, m_foo.Calc(1, 16));
+}
+```
+
+### 2.1.3 调用
+
+单元测试初始化：
+```c
+int main(int argc, char ** argv)
+{
+  testing::InitGoogleTest(&argc, argv);
+
+  return RUN_ALL_TESTS();
+}
+```
+
+`main()`函数中的`::testing::InitGoogleTest()`函数将会解析命令行中的`googletest`参数，它允许用户通过多样的命令行参数来控制测试程序的行为（即定制命令行参数的功能）。
+
+`RUN_ALL_TESTS()`宏在所有 test 都成功时，返回0；否则返回1。需要注意的是，`RUN_ALL_TESTS()` 会运行所有关联的 test，这些 test 可以来自不同的 test case，甚至不同的源文件。
+
+当我们调用 RUN_ALL_TESTS() 宏的时候，会进行以下操作：
+
+- 保存所有 googletest flag 的状态；
+- 为第一个 test 创建一个 test fixture 对象；
+- 通过 SetUp() 对上一步创建的 test fixture 对象进行初始化；
+- 使用 test fixture 对象运行 test；
+- 通过 TearDown() 清理 fixture；
+- 删除 fixture；
+- 还原所有 googletest flag 的状态；
+- 为下一个 test 重复上述操作，直到所有的 test 执行完成。
+
+## 2.1 断言
+
+**断言**是测试用例当中使用最多的测试工具。
+
+当前，有两种断言可供我们使用，提供的接口都是成对的：
+
+- `ASSERT_*` ：当断言失败时，产生致命错误，并终止当前函数，其他测试用例继续执行；
+- `EXPECT_*` ：当断言失败时，产生非致命错误，并且不会终止当前函数，继续执行当前测试用例。
+
+**断言接口组**:
+
+- **布尔值检查**
+
+    |     Fatal assertion      |    Nonfatal assertion    |      Verifies      |
+    | ----------------------- | ----------------------- | ----------------- |
+    | ASSERT_TRUE(condition);  | EXPECT_TRUE(condition);  | condition is true  |
+    | ASSERT_FALSE(condition); | EXPECT_FALSE(condition); | condition is false |
+
+- **数值型数据检**
+
+    |       Fatal assertion        |      Nonfatal assertion      |      Verifies      |
+    | --------------------------- | --------------------------- | ----------------- |
+    | ASSERT_EQ(expected, actual); | EXPECT_EQ(expected, actual); | expected == actual |
+    | ASSERT_NE(val1, val2);       | EXPECT_NE(val1, val2);       | val1 != val2       |
+    | ASSERT_LT(val1, val2);       | EXPECT_LT(val1, val2);       | val1 < val2        |
+    | ASSERT_LE(val1, val2);       | EXPECT_LE(val1, val2);       | val1 <= val2       |
+    | ASSERT_GT(val1, val2);       | EXPECT_GT(val1, val2);       | val1 > val2        |
+    | ASSERT_GE(val1, val2);       | EXPECT_GE(val1, val2);       | val1 >= val2       |
+
+- **字符串检查**
+
+    |              Fatal assertion               |             Nonfatal assertion             |                            Verifies                             |
+    | ----------------------------------------- | ----------------------------------------- | --------------------------------------------------------------- |
+    | ASSERT_STREQ(expected_str, actual_str);     | EXPECT_STREQ(expected_str, actual_str);     | the two C strings have the same content                          |
+    | ASSERT_STRNE(str1, str2);                   | EXPECT_STRNE(str1, str2);                   | the two C strings have different content                         |
+    | ASSERT_STRCASEEQ(expected_str, actual_str); | EXPECT_STRCASEEQ(expected_str, actual_str); | the two C strings have the same content, ignoring case(忽略大小写)  |
+    | ASSERT_STRCASENE(str1, str2);               | EXPECT_STRCASENE(str1, str2);               | the two C strings have different content, ignoring case(忽略大小写) |
+
+- **显示返回成功或失败**
+
+    | Fatal assertion | Nonfatal assertion |
+    | -------------- | ----------------- |
+    | FAIL();         | ADD_FAILURE();     |
+    | SUCCEED();      |                   |
+
+    ```cpp
+    TEST(TestAssert, priv_result) {
+      // 自己决定成功或失败
+        ADD_FAILURE() << "Sorry"; // None Fatal Asserton，继续往下执行。
+
+        // FAIL(); // Fatal Assertion，不往下执行该用例。
+
+        SUCCEED();
+    }
+    ```
+
+- **异常检查**
+
+    |             Fatal assertion             |           Nonfatal assertion            |                           Verifies                           |
+    | -------------------------------------- | -------------------------------------- | ------------------------------------------------------------ |
+    | ASSERT_THROW(statement, exception_type); | EXPECT_THROW(statement, exception_type); | statement throws an exception of the given type, 第二个参数是类型 |
+    | ASSERT_ANY_THROW(statement);             | EXPECT_ANY_THROW(statement);             | statement throws an exception of any type                      |
+    | ASSERT_NO_THROW(statement);             | EXPECT_NO_THROW(statement);             | statement doesn't throw any exception                         |
+
+    ```cpp
+    int Foo(int a, int b) {
+        if (0 == a|| 0 == b) {
+            throw "don't do that";
+        }
+
+        int c = a % b;
+
+        if (0 == c)
+            return b;
+        return Foo(b, c);
+    }
+
+    TEST(TestAssert, HandleZeroInput) {
+        EXPECT_ANY_THROW(Foo(10, 0));
+
+        EXPECT_THROW(Foo(0, 5), char*); // 希望返回一个char *的异常
+    }
+    ```
+
+- **Predicate Assertions**
+
+    | Fatal assertion                    | Nonfatal assertion                 | Verifies                     |
+    | -------------------------------------- | -------------------------------------- | -------------------------------- |
+    | ASSERT_PRED1(pred1, val1);       | EXPECT_PRED1(pred1, val1);       | pred1(val1) returns true       |
+    | ASSERT_PRED2(pred2, val1, val2); | EXPECT_PRED2(pred2, val1, val2); | pred2(val1, val2) returns true |
+    | ...                                    | ...                                    | ...                              |
+
+    |                Fatal assertion                |              Nonfatal assertion               |               Verifies                |
+    | -------------------------------------------- | -------------------------------------------- | ------------------------------------ |
+    | ASSERT_PRED_FORMAT1(pred_format1, val1);       | EXPECT_PRED_FORMAT1(pred_format1, val1);       | pred_format1(val1) is successful       |
+    | ASSERT_PRED_FORMAT2(pred_format2, val1, val2); | EXPECT_PRED_FORMAT2(pred_format2, val1, val2); | pred_format2(val1, val2) is successful |
+    | ...                                          |                                              |                                      |
+
+    这里说的是比如测试接口返回失败了，但是又向要在失败时查看传入的参数，这时候就需要这种断言了：
+    ```cpp
+    bool MutuallyPrime(int m, int n) {
+        return m > n;
+    }
+
+    TEST(TestAssert, param) {
+        int m = 5, n = 6;
+        // 自带断言，当函数返回为假时，会出错，并且把传入的这两个参数的值给打印出来，
+        // 注意:这个这个宏定义族最多5个参数
+        EXPECT_PRED2(MutuallyPrime, m, n); 
+        m = 7;
+        n = 6;
+        EXPECT_PRED2(MutuallyPrime, m, n);
+    }
+    ```
+
+    也可以使用自定义形式`EXPECT_PRED_FORMAT...`:
+    ```cpp
+    int Foo(int a, int b) {
+        if (0 == a|| 0 == b) {
+            throw "don't do that";
+        }
+
+        int c = a % b;
+
+        if (0 == c)
+            return b;
+        return Foo(b, c);
+    }
+
+    testing::AssertionResult AssertFoo(const char* m_expr, const char* n_expr, const char* k_expr, int m, int n, int k) {
+      // 成倍的参数个数，不过前半表示后半的原始值
+        if (Foo(m, n) == k)
+            return testing::AssertionSuccess();
+        testing::Message msg;
+        msg << m_expr << " 和 " << n_expr << " 的最大公约数应该是：" << Foo(m, n) << " 而不是：" << k_expr;
+        return testing::AssertionFailure(msg);
+    }
+
+    TEST(TestAssert, pretty_cout) {
+      // 和前面的类似，不过输出更灵活
+        EXPECT_PRED_FORMAT3(AssertFoo, 3, 6, 2);
+    }
+    ```
+    
+    不过貌似参数个数时有限制的,6个?
+
+- **浮点型检查**
+
+    |          Fatal assertion           |         Nonfatal assertion         |               Verifies                |
+    | ---------------------------------- | ---------------------------------- | -------------------------------------- |
+    | ASSERT_FLOAT_EQ(expected, actual);  | EXPECT_FLOAT_EQ(expected, actual);  | the two float values are almost equal  |
+    | ASSERT_DOUBLE_EQ(expected, actual); | EXPECT_DOUBLE_EQ(expected, actual); | the two double values are almost equal |
+
+- **对相近的两个数比较**
+
+    |          Fatal assertion           |         Nonfatal assertion         |                                 Verifies                                  |
+    | ---------------------------------- | ---------------------------------- | ------------------------------------------------------------------------- |
+    | ASSERT_NEAR(val1, val2, abs_error); | EXPECT_NEAR(val1, val2, abs_error); | the difference between val1 and val2 doesn't exceed the given absolute error |
+
+- **Windows HRESULT assertions**
+
+    |           Fatal assertion            |          Nonfatal assertion          |            Verifies            |
+    | ----------------------------------- | ----------------------------------- | ------------------------------ |
+    | ASSERT_HRESULT_SUCCEEDED(expression); | EXPECT_HRESULT_SUCCEEDED(expression); | expression is a success HRESULT |
+    | ASSERT_HRESULT_FAILED(expression);    | EXPECT_HRESULT_FAILED(expression);    | expression is a failure HRESULT |
+
+- **补充类型检查**
+
+    ```cpp
+    template <typename T> class FooType {
+    public:
+        void Bar() { testing::StaticAssertTypeEq<int, T>(); }
+    };
+
+    // 类型检查，检查不通过会编译不通过，并且给出错误信息
+
+    TEST(TestAssert, type_check) {
+        FooType<bool> fooType;
+        fooType.Bar();
+    }
+    ```
+
+## 2.2 `setup`与`teardown`
+
+有的理解为**事件**：
+在运行测试用例时可能说需要在整个测试前后、TestSuite前后、TestCase前后添加一些特定的操作:setUp、TearsDown，那么就需要在前后添加事件，而这里的时间就指:`setup`与`teardown`。
+
+
+* 全局的，所有案例执行前后;
+* TestSuite级别的，在某一批案例(组，集)中第一个案例前，最后一个案例执行后;
+* TestCase级别的，每个TestCase前后.
+
+这里将介绍测试用例当中的各种`setup`与`teardown`的用法。
+
+### 2.2.1 `TestCase`级别
+
+单个测试用例添加`test fixture`使用`TEST_F`添加测试用例。
+
+编写该种测试用例的方式为：
+- 定义`test suite`类，该类需要继承`testing::test`;
+- 实现`SetUp`和`TearDown`;
+- 每测试用例的`test suite`为该类名。
+
+此时每个该`test suite`中的每个`test case`在执行前会调用`SetUp`，执行后调用`TearnDown`。每个测试用例的环境都是单独的。
+```cpp
+class FooCalcTest:public testing::Test
+{
+class FooCalc{
+  public:
+    void Init(void) {}
+
+    int Calc(int a, int b) {
+      return a + b;
+    }
+
+    void Finalize(void) {}
+};
+protected:
+    virtual void SetUp()
+    {
+      cout << "FooCalcTest SetUp" << endl;
+        m_foo.Init();
+    }
+    virtual void TearDown()
+    {
+      cout << "FooCalcTest TearDown" << endl;
+        m_foo.Finalize();
+    }
+
+    FooCalc m_foo;
+};
+
+TEST_F(FooCalcTest, calc1)
+{
+    EXPECT_EQ(28, m_foo.Calc(12, 16));
+}
+
+TEST_F(FooCalcTest, calc2)
+{
+    EXPECT_EQ(17, m_foo.Calc(1, 16));
+}
+```
+
+### 2.2.2 `TestSuite`级别
+
+这是在整个`test suite`前后才会执行的事件，使用方式和`TestCase`级别的类似，不同点是将实现`SetupTestCase`与`TearDownTestCase`接口。
+
+```cpp
+class FooTest : public testing::Test {
+ protected:
+  static void SetUpTestCase() {
+    shared_resource_ = new int(5);
+    cout << "FooTest SetUpTestCase" << endl;
+  }
+  static void TearDownTestCase() {
+    delete shared_resource_;
+    shared_resource_ = NULL;
+    cout << "FooTest TearDownTestCase" << endl;
+  }
+  // Some expensive resource shared by all tests.
+  // 测试用例之间共享的数据
+  static int* shared_resource_;
+};
+
+int * FooTest::shared_resource_ = nullptr;
+
+// 在编写测试案例时，我们需要使用TEST_F这个宏，第一个参数必须是我们上面类的名字，代表一个TestSuite。
+
+TEST_F(FooTest, Test1)
+{
+  // 直接使用就可以了
+  cout << "Test1 : val = " << *shared_resource_ << endl;
+  *shared_resource_ = 9;
+}
+
+TEST_F(FooTest, Test2)
+{
+  cout << "Test2 : val = " << *shared_resource_ << endl;
+}
+```
+
+需要在测试用例之间使用共享数据，可以定义类当中的静态变量，每个测试用例直接使用即可，如`shared_resource_`。
+
+### 2.2.3 全局
+
+全局事件的使用类似，不过全局的又更像是环境：
+- 继承类:`testing::Environment`;
+- 实现`SetUp`和`TearnDown`方法;
+- `main`函数中通过`testing::AddGlobalTestEnvironment`方法将事件挂进来，也就是说，我们可以写很多个这样的类，然后将他们的事件都挂上去.
+
+```cpp
+class FooEnvironment : public testing::Environment
+{
+public:
+    virtual void SetUp()
+    {
+        std::cout << "Foo FooEnvironment SetUp" << std::endl;
+    }
+    virtual void TearDown()
+    {
+        std::cout << "Foo FooEnvironment TearDown" << std::endl;
+    }
+};
+
+int main(int argc, char** argv)
+{
+  // 添加全局的setUp和tearDown
+  testing::AddGlobalTestEnvironment(new FooEnvironment);
+
+  testing::InitGoogleTest(&argc, argv);
+
+  return RUN_ALL_TESTS();
+}
+```
+
+## 2.3 测试数据
+
+这里的使用场景是一个测试用例需要多次使用，而每次的数据却不一样，如:
+```cpp
+TEST(WithParam, show) {
+    // 繁琐的写法，一百个怎么办
+    EXPECT_TRUE(2);
+    EXPECT_TRUE(3);
+    EXPECT_TRUE(4);
+    EXPECT_TRUE(5);
+}
+```
+
+这里就有一种另外的方式将数据事先添加，在测试用例当中取参数即可,和前面的事件一样，需要定义`test suite`名称的类，这里继承`testing::TestWithParam<T>`，`T`则代表数据类型。
+
+1. 测试用例定义
+    ```cpp
+    // 这里将类型指定为int
+    class IsPrimeParamTest : public testing::TestWithParam<int>
+    {
+
+    };
+
+    // parameterized,大概是这个宏P的缩写吧
+    // 首先第一个参数必须是这个类
+    TEST_P(IsPrimeParamTest, HandleTrueReturn)
+    {
+        // GetParam方法是内置的，用于获取参数
+        // 会发现这个测试用例会执行多次
+        int n = GetParam();
+        cout << "n = [" << n << "]" << endl;
+        EXPECT_TRUE(n);
+    }
+    ```
+
+2. 数据添加，使用`INSTANTIATE_TEST_CASE_P`这宏来告诉gtest你要测试的参数范围，要注意的是一个测试用例只能添加一次，原因是这个宏会产生函数定义，多次则造成重复定义。
+    ```cpp
+    #define INSTANTIATE_TEST_SUITE_P(prefix, test_suite_name, ...)
+    ```
+    使用：
+    - 第一个参数是测试用例的前缀，可以任意取
+    - 第二个参数是测试用例的名称，需要和之前定义的参数化的类的名称相同，如：`IsPrimeParamTest`
+    - 第三个参数是可以理解为参数生成器。Google提供了一系列的参数生成的函数
+
+        |          Range(begin, end[, step])          |                                                                                                                       范围在begin~end之间，步长为step，不包括end                                                                                                                       |
+        | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+        | Values(v1, v2, ..., vN)                     | v1,v2到vN的值,枚举                                                                                                                                                                                                                                                                 |
+        | ValuesIn(container) and ValuesIn(begin, end) | 从一个C类型的数组或是STL容器，或是迭代器中取值                                                                                                                                                                                                                                            |
+        | Bool()                                      | 取`false 和 true 两个值`                                                                                                                                                                                                                                                            |
+        | Combine(g1, g2, ..., gN)                    | 这个比较强悍，它将g1,g2,...gN进行排列组合，g1,g2,...gN本身是一个参数生成器，每次分别从g1,g2,..gN中各取出一个值，组合成一个元组(Tuple)作为一个参数。说明：这个功能只在提供了`<tr1/tuple>`头的系统中有效。gtest会自动去判断是否支持tr/tuple，如果你的系统确实支持，而`gtest`判断错误的话，你可以重新定义宏`GTEST_HAS_TR1_TUPLE=1`。 |
+        ```cpp
+        // INSTANTIATE_TEST_CASE_P(TrueReturn, IsPrimeParamTest, testing::Values(3, 5, 11, 23, 17));
+        //INSTANTIATE_TEST_CASE_P(TrueReturn, IsPrimeParamTest, testing::Range(3, 7));
+        const int serial_values[] = {1, 3, 5, 7, 9, 10, 11};
+        //INSTANTIATE_TEST_CASE_P(TrueReturn, IsPrimeParamTest, testing::ValuesIn(serial_values));
+
+        vector<int> v_values(4, 2);
+        INSTANTIATE_TEST_CASE_P(TrueReturn, IsPrimeParamTest, testing::ValuesIn(v_values.begin(), v_values.end()));
+        ```
+
+其实在测试用例当中你也可以自己实现逻辑来完成类似的功能。
+
+## 2.4 命令行参数
+
+在之前的例子当中,`main`函数会设置命令行参数，可以设置的命令行参数可以通过`--help`来查看选项。
+
+## 2.5 模拟测试
+
+参考文档:`googlemock/docs`.`cook_book.md`非常详细.
+
+这里仍然是指测试时找不到真实的原型。这里就要用到这种方法。
+
+一个mock对象实现与一个真实对象相同的接口，但让你在运行时指定它时，如何使用?它应该做什么?（哪些方法将被称为？什么顺序？多少次？有什么参数？他们会返回什么？等）
+
+注意：很容易混淆伪造对象和模拟对象。fakes和mock在测试驱动开发（TDD）社区中实际上意味着非常不同的东西：
+
+- Fake（伪对象）有工作实现，但通常采取一些捷径（可能使操作更便宜），这使得它们不适合生产。内存中的文件系统将是一个fake的例子。
+- Mock（模拟器）是预期编程的对象，它们形成它们期望接收的调用的规范。
+如果所有这些对你来说太抽象了，不要担心 - 最重要的事情要记住是一个模拟允许你检查它自己和调用者之间的交互。一旦你开始使用mock，fake和mock之间的差异将变得更加清晰。
+
+Google C ++ Mocking框架（或简称为Google Mock）是一个库（有时我们称之为“框架”，以使其声音很酷）用于创建模拟类和使用它们。 它之对于对C ++，就像jMock和EasyMock对于Java。
+
+使用Google Mock涉及三个基本步骤：
+
+- 使用一些简单的宏描述你想要模拟的接口，他们将扩展到你的mock类的实现;
+- 创建一些模拟对象，并使用直观的语法指定其期望和行为;
+- 练习使用模拟对象的代码。 Google Mock会在出现任何违反期望的情况时立即处理。
+
+### 2.5.1 使用
+
+- 需要模拟的类；
+- 编写模拟类，模拟类需要继承依赖的类；
+- 模拟类中需要实现每个接口的模拟；
+- 编写单元测试，测试每个接口的调用、参数检查、返回值。
+
+**注意**:使用`mock`编译时头文件包含`<google/gmock.h>`,编译时加`-lgmock`.
+
+**例子**:
+```cpp
+#include "gmock/gmock.h"  // Brings in Google Mock.
+
+class Turtle {
+public:
+  virtual ~Turtle() {}
+  virtual void PenUp() = 0;
+  virtual void PenDown() = 0;
+  virtual void Forward(int distance) = 0;
+  virtual void Turn(int degrees) = 0;
+  virtual void GoTo(int x, int y) = 0;
+  virtual int GetX() const = 0;
+  virtual int GetY() const = 0;
+};
+
+class MockTurtle : public Turtle {
+ public:
+  MOCK_METHOD0(PenUp, void());
+  MOCK_METHOD0(PenDown, void());
+  MOCK_METHOD1(Forward, void(int distance));
+  MOCK_METHOD1(Turn, void(int degrees));
+  MOCK_METHOD2(GoTo, void(int x, int y));
+  MOCK_CONST_METHOD0(GetX, int());
+  MOCK_CONST_METHOD0(GetY, int());
+};
+
+TEST(PainterTest, CanDrawSomething) {
+  MockTurtle turtle;                          // #2
+  EXPECT_CALL(turtle, PenDown())              // #3
+      .Times(AtLeast(1));
+
+    turtle.PenDown();
+}                                             // #5
+ 
+int main(int argc, char** argv) {
+  // The following line must be executed to initialize Google Mock
+  // (and Google Test) before running the tests.
+  ::testing::InitGoogleMock(&argc, argv);
+  return RUN_ALL_TESTS();
+}
+```
+
+模拟类`MockTurtle`中的`MOCK_METHODn`用于定义需要模拟的接口，后面的数字代表参数个数，使用形式是:接口名+返回值类类型(参数).
+带有`CONST`表示接口声明后边带有`const`.
+
+新的宏为`MOCK_METHOD`，后面没有数字:
+```cpp
+class MyMock {
+ public:
+  MOCK_METHOD(ReturnType, MethodName, (Args...));
+  MOCK_METHOD(ReturnType, MethodName, (Args...), (Specs...));
+};
+```
+参数分别是:返回类型，接口名，参数列，可选的关键字(`const`, `overried`, `noexcept`)
+例如:
+```cpp
+/*
+// 不能直接使用模板
+class MockFoo {
+ public:
+  MOCK_METHOD((std::pair<bool, int>), GetPair, ());
+  MOCK_METHOD(bool, CheckMap, ((std::map<int, double>), bool));
+};
+*/
+
+class MockFoo {
+ public:
+  using BoolAndInt = std::pair<bool, int>;
+  MOCK_METHOD(BoolAndInt, GetPair, ());
+  using MapIntDouble = std::map<int, double>;
+  MOCK_METHOD(bool, CheckMap, (MapIntDouble, bool));
+};
+```
+
+如果是`private`或者`protected`在公有继承时仍然像共有方法一样调用。
+
+配合其他测试框架使用时可以:
+```cpp
+int main(int argc, char** argv) {
+  // The following line causes Google Mock to throw an exception on failure,
+  // which will be interpreted by your testing framework as a test failure.
+  ::testing::GTEST_FLAG(throw_on_failure) = true;
+  ::testing::InitGoogleMock(&argc, argv);
+  ... whatever your testing framework requires ...
+}
+```
+
+### 2.5.1 测试
+
+关于模拟接口的测试方法很多，具体的可以阅读官方文档`cook_book.md`和`cheat_sheet.md`.
+
+但是总的来说有:
+- 参数检查；
+- 返回值检查；
+- 调用次数。
+
+**期望值**:
+
+- `ON_CALL`;
+- `EXPECT_CALL`.
+
+一般`EXPECT_CALL`用得比较多:
+
+例子:
+```cpp
+EXPECT_CALL(mock_object, method(matchers))
+    .Times(cardinality)
+    .WillOnce(action)
+    .WillRepeatedly(action);
+```
+
+参数形式:
+- 类名；
+- 方法调用；
+- `Times`指调用次数；
+- `WillOnce`指当此调用返回值；
+- `WillRepeatdly`指其他调用时返回值;
+
+当然可以使用`WillOnce`来指定每次的返回值。
+
+**校验**:
+
+这里的校验指参数校验。
+
+在接口调用时可以对参数进行校验，比如是否等于、大小于等等。
+校验的宏:
+| Matcher                | Description                                                  |
+| :--------------------- | :----------------------------------------------------------- |
+| `Eq(value)` or `value` | `argument == value`                                          |
+| `Ge(value)`            | `argument >= value`                                          |
+| `Gt(value)`            | `argument > value`                                           |
+| `Le(value)`            | `argument <= value`                                          |
+| `Lt(value)`            | `argument < value`                                           |
+| `Ne(value)`            | `argument != value`                                          |
+| `IsFalse()`            | `argument` evaluates to `false` in a Boolean context.        |
+| `IsTrue()`             | `argument` evaluates to `true` in a Boolean context.         |
+| `IsNull()`             | `argument` is a `NULL` pointer (raw or smart).               |
+| `NotNull()`            | `argument` is a non-null pointer (raw or smart).             |
+| `Optional(m)`          | `argument` is `optional<>` that contains a value matching `m`. (For testing whether an `optional<>` is set, check for equality with `nullopt`. You may need to use `Eq(nullopt)` if the inner type doesn't have `==`.) |
+| `VariantWith<T>(m)`    | `argument` is `variant<>` that holds the alternative of type T with a value matching `m`. |
+| `Ref(variable)`        | `argument` is a reference to `variable`.                     |
+| `TypedEq<type>(value)` | `argument` has type `type` and is equal to `value`. You may need to use this instead of `Eq(value)` when the mock function is overloaded. |
+
+这些都要使用`using ::testing::xxx`来导入:
+
+1. 参数校验:
+```cpp
+using ::testing::Eq;
+
+...
+
+ON_CALL(turtle, Forward(Eq(100)));
+
+```
+如果不关心参数传入何值，使用`_`:
+```cpp
+using ::testing::_;
+
+...
+
+ON_CALL(turtle, Forward(_));
+```
+
+2. 返回值校验，要指定返回值要使用`Return`来指定.
+
+```cpp
+using ::testing::Return;...
+EXPECT_CALL(turtle, GetX())
+    .Times(5)
+    .WillOnce(Return(100))
+    .WillOnce(Return(150))
+    .WillRepeatedly(Return(200));
+```
