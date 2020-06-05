@@ -1,0 +1,1 @@
+colourscheme_bandit.vba: call delete('/home/astralrovers/.vim/colors/bandit.vim')|call delete('/home/astralrovers/.vim/syntax/colours_bandit.vim')|call delete('/home/astralrovers/.vim/ftplugin/colours_bandit.vim')

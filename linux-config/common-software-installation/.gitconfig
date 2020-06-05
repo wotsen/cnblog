@@ -1,0 +1,49 @@
+[user]
+	email = astralrovers@outlook.com
+	name = ywl
+[alias]
+	lg = log --color --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an><%ae>%Creset' --abbrev-commit --
+	st = status
+	ci = commit
+	cia = commit --amend
+	ciah = "commit --amend -C HEAD#"
+	cich = commit -c HEAD
+	co = checkout
+	cob = checkout -b
+	coa = checkout -- '*'
+	ps = push
+	psu = push -u
+	psf = push -f
+	pl = pull
+	fc = fetch
+	fca = fetch --all
+	ap = add -p
+	an = add -N
+	df = diff
+	dfc = diff --cached
+	dtr = diff-tree --no-commit-id --name-only -r
+	dst = diff --name-status
+	ffm = merge --ff-only
+	nem = merge --no-edit
+	mgab = merge --abort
+	rs = reset
+	rsh = reset --hard
+	rshp = reset --hard HEAD^
+	rss = reset --soft
+	ss = stash
+	ssp = stash pop
+	ssd = stash drop
+[color]
+	branch = auto
+	ui = auto
+	status = auto
+[core]
+	editor = vim
+[push]
+	default = current
+[mergetool]
+	keepBackup = false
+[diff]
+	tool = vimdiff
+[merge]
+	tool = vimdiff
